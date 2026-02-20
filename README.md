@@ -1,135 +1,152 @@
 # Pulse-Check-API ("Watchdog" Sentinel)
-This challenge is designed to test your ability to bridge Computer Science fundamentals with Modern Backend Engineering.
 
-## 1. Business Context
-> **Client:** *CritMon Servers Inc.* (A Critical Infrastructure Monitoring Company).
+Pulse-Check-API is a robust "Dead Man's Switch" monitoring service designed for critical infrastructure. It allows remote devices to register monitors with specific heartbeating intervals. If a device fails to check in within its allocated time, the system automatically triggers alerts.
 
-### The Problem
-CritMon provides monitoring for remote solar farms and unmanned weather stations in areas with poor connectivity. These devices are supposed to send "I'm alive" signals every hour.
+## Architecture Diagram
 
-Currently, CritMon has no way of knowing if a device has gone offline (due to power failure or theft) until a human manually checks the logs. They need a system that alerts *them* when a device *stops* talking.
+The following sequence diagram illustrates the core lifecycle of a monitor: registration, heartbeating, and the automated alert system.
 
-### The Solution
-You need to build a **Dead Man’s Switch API**. Devices will register a "monitor" with a countdown timer (e.g., 60 seconds). If the device fails to "ping" (send a heartbeat) to the API before the timer runs out, the system automatically triggers an alert.
+```mermaid
+sequenceDiagram
+    participant Device as Remote Device
+    participant API as Pulse-Check-API
+    participant DB as MongoDB
+    participant Alert as Logger
+    participant Cron as Cron Scheduler (Checkers)
 
----
+    Note over Device, API: Registration
+    Device->>API: POST /monitors (timeout, alert_email)
+    API->>DB: Save Monitor (Status: ACTIVE, next_alert_at)
+    API-->>Device: 201 Created
 
-## 2. Technical Objective
-Build a backend service that manages stateful timers.
+    Note over Device, API: Heartbeat Lifecycle
+    Device->>API: POST /monitors/{id}/heartbeat
+    API->>DB: Update next_alert_at & status
+    API-->>Device: 200 OK
 
-* **Registration:** Allow a client to create a monitor with a specific timeout duration.
-* **Heartbeat:** Reset the countdown when a ping is received.
-* **Trigger:** Fire a webhook (or log a critical error) if the countdown reaches zero.
-
-
----
-
-## 3. Getting Started
-
-1.  **Fork this Repository:** Do not clone it directly. Create a fork to your own GitHub account.
-2.  **Environment:** You may use **Node.js, Python, Java or Go, etc.**.
-3.  **Submission:** Your final submission will be a link to your forked repository containing:
-    * The source code.
-    * The **Architecture Diagram**
-    * The `README.md` with documentation.
+    Note over Cron, DB: Failure Detection
+    Cron->>DB: Find expired ACTIVE monitors (now > next_alert_at)
+    DB-->>Cron: List of timed-out devices
+    Cron->>DB: Update status to DOWN
+    Cron->>Alert: Send Alert Notification
+```
 
 ---
 
-## 4. The Architecture Diagram 
-**Task:** Before you write any code, you must design the logic flow.
-**Deliverable:** A **Sequence Diagram** or **State Flowchart** embedded in your `README.md`.
+## Setup Instructions
+
+Follow these steps to get the Pulse-Check-API running locally.
+
+### Prerequisites
+- [Node.js](https://nodejs.org/) (v18 or higher)
+- [MongoDB](https://www.mongodb.com/try/download/community) (running locally or a connection string)
+
+### 1. Clone the Repository
+```bash
+git clone <your-repo-link>
+cd Pulse-Check-API
+```
+
+### 2. Install Dependencies
+```bash
+npm install
+```
+
+### 3. Configure Environment Variables
+Create a `.env` file in the root directory and add the following variables:
+```env
+PORT=3000
+MONGODB_URI=your-mongodb-uri
+```
+
+### 4. Start the Application
+```bash
+# Development mode
+npm run start:dev
+
+# Production mode
+npm run start:prod
+```
 
 ---
 
-## 5. User Stories & Acceptance Criteria
+## API Documentation
 
-### User Story 1: Registering a Monitor
-**As a** device administrator,  
-**I want to** create a new monitor for my device,  
-**So that** the system knows to track its status.
+### 1. Register a Monitor
+Create a new monitor for a device.
+- **Endpoint:** `POST /monitors`
+- **Body:**
+  ```json
+  {
+    "id": "solar-farm-01",
+    "timeout": 60,
+    "alert_email": "admin@example.com"
+  }
+  ```
+- **Responses:**
+    - **`201 Created`**: Monitor registered successfully.
+      ```json
+      {
+        "message": "Monitor created successfully",
+        "data": {
+          "id": "solar-farm-01",
+          "timeout": 60,
+          "alert_email": "admin@example.com",
+          "status": "active"
+        }
+      }
+      ```
+    - **`400 Bad Request`**: Validation error (e.g., invalid email or missing fields).
+    - **`409 Conflict`**: Monitor ID already exists.
 
-**Acceptance Criteria:**
-- [ ] The API accepts a `POST /monitors` request.
-- [ ] Input: `{"id": "device-123", "timeout": 60, "alert_email": "admin@critmon.com"}`.
-- [ ] The system starts a countdown timer for 60 seconds associated with `device-123`.
-- [ ] Response: `201 Created` with a confirmation message.
+### 2. Send Heartbeat
+Reset the countdown timer for a monitor.
+- **Endpoint:** `POST /monitors/{id}/heartbeat`
+- **Responses:**
+    - **`200 OK`**: Heartbeat received and timer reset.
+      ```json
+      { "message": "Heartbeat received" }
+      ```
+    - **`404 Not Found`**: Monitor ID not found.
 
-### User Story 2: The Heartbeat (Reset)
-**As a** remote device,  
-**I want to** send a signal to the server,  
-**So that** my timer is reset and no alert is sent.
+### 3. Pause Monitor
+Stop monitoring for a device (e.g., during maintenance).
+- **Endpoint:** `POST /monitors/{id}/pause`
+- **Responses:**
+    - **`200 OK`**: Monitoring paused.
+      ```json
+      { "message": "Monitor paused" }
+      ```
+    - **`404 Not Found`**: Monitor ID not found.
 
-**Acceptance Criteria:**
-- [ ] The API accepts a `POST /monitors/{id}/heartbeat` request.
-- [ ] If the ID exists and the timer has NOT expired:
-    - [ ] Restart the countdown from the beginning (e.g., reset to 60 seconds).
-    - [ ] Return `200 OK`.
-- [ ] If the ID does not exist:
-    - [ ] Return `404 Not Found`.
-
-### User Story 3: The Alert (Failure State)
-**As a** support engineer,  
-**I want to** be notified immediately if a device stops sending heartbeats,  
-**So that** I can deploy a repair team.
-
-**Acceptance Criteria:**
-- [ ] If the timer for `device-123` reaches 0 seconds (no heartbeat received):
-    - [ ] The system must internally "fire" an alert.
-    - [ ] **Implementation:** For this project, simply `console.log` a JSON object: `{"ALERT": "Device device-123 is down!", "time": <timestamp>}`. (Or simulate sending an email).
-    - [ ] The monitor status changes to `down`.
-
----
-
-## 6. Bonus User Story (The "Snooze" Button)
-**As a** maintenance technician,  
-**I want to** pause monitoring while I am repairing a device,  
-**So that** I don't trigger false alarms.
-
-**Acceptance Criteria:**
-- [ ] Create a `POST /monitors/{id}/pause` endpoint.
-- [ ] When called, the timer stops completely. No alerts will fire.
-- [ ] Calling the heartbeat endpoint again automatically "un-pauses" the monitor and restarts the timer.
-
----
-
-## 7. The "Developer's Choice" Challenge
-We value engineers who look for "what's missing."
-
-**Task:** Identify **one** additional feature that makes this system more robust or user-friendly.
-1.  **Implement it.**
-2.  **Document it:** Explain *why* you added it in your README.
-
----
-
-## 8. Documentation Requirements
-Your final `README.md` must replace these instructions. It must cover:
-
-1.  **Architecture Diagram** 
-2.  **Setup Instructions** 
-3.  **API Documentation** 
-4.  **The Developer's Choice:** Explanation of your added feature.
+### 4. Update Timeout
+Dynamically update the timeout duration for an existing monitor.
+- **Endpoint:** `PATCH /monitors/{id}/update-timeout`
+- **Body:**
+  ```json
+  { "timeout": 120 }
+  ```
+- **Responses:**
+    - **`200 OK`**: Timeout updated successfully.
+      ```json
+      { "message": "Monitor timeout updated" }
+      ```
+    - **`400 Bad Request`**: Validation error (e.g., non-integer timeout).
+    - **`404 Not Found`**: Monitor ID not found.
 
 ---
-Submit your repo link via the [online](https://forms.office.com/e/rGKtfeZCsH) form.
 
-## 🛑 Pre-Submission Checklist
-**WARNING:** Before you submit your solution, you **MUST** pass every item on this list.
-If you miss any of these critical steps, your submission will be **automatically rejected** and you will **NOT** be invited to an interview.
+## The Developer's Choice: Update Timeout Feature
 
-### 1. 📂 Repository & Code
-- [ ] **Public Access:** Is your GitHub repository set to **Public**? (We cannot review private repos).
-- [ ] **Clean Code:** Did you remove unnecessary files (like `node_modules`, `.env` with real keys, or `.DS_Store`)?
-- [ ] **Run Check:** if we clone your repo and run `npm start` (or equivalent), does the server start immediately without crashing?
+### The Addition: `PATCH /monitors/{id}/update-timeout`
 
-### 2. 📄 Documentation (Crucial)
-- [ ] **Architecture Diagram:** Did you include a visual Diagram (Flowchart or Sequence Diagram) in the README?
-- [ ] **README Swap:** Did you **DELETE** the original instructions (the problem brief) from this file and replace it with your own documentation?
-- [ ] **API Docs:** Is there a clear list of Endpoints and Example Requests in the README?
+**Why I added it:**
+In a real-world scenario, the operational profile of a monitored device may change over time. For example:
+- A weather station might transition from "High Frequency" (60s pings) during a storm to "Low Power" (1-hour pings) during clear weather.
+- A server might need a longer timeout window during heavy processing tasks to avoid false offline alerts.
 
+By adding the **Update Timeout** endpoint, I've made the system more robust and flexible. Device administrators can now adjust monitoring sensitivity on-the-fly without having to delete and re-recreate the monitor, ensuring continuous coverage while adapting to changing conditions.
 
-### 3. 🧹 Git Hygiene
-- [ ] **Commit History:** Does your repo have multiple commits with meaningful messages? (A single "Initial Commit" is a red flag).
-
----
-**Ready?**
-If you checked all the boxes above, submit your repository link in the application form. Good luck! 🚀
+**Implementation Details:**
+- **Endpoint:** `PATCH /monitors/{id}/update-timeout`
+- **Logic:** Updates the `timeout` value in the database and immediately recalculates the `next_alert_at` timestamp based on the last known heartbeat, preventing unexpected alerts immediately after a change.

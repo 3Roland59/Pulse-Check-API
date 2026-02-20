@@ -5,7 +5,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { Monitor } from './schemas/monitor.schema';
 import { CreateMonitorDto } from './dto/create-monitor.dto';
 import { MonitorStatus } from './enums/monitor.status.enum';
-import { EmailService } from '../email/email.service';
+// import { EmailService } from '../email/email.service';
 
 @Injectable()
 export class MonitorService {
@@ -13,7 +13,7 @@ export class MonitorService {
 
   constructor(
     @InjectModel(Monitor.name) private monitorModel: Model<Monitor>,
-    private readonly emailService: EmailService,
+    // private readonly emailService: EmailService,
   ) { }
 
   async create(createMonitorDto: CreateMonitorDto): Promise<Monitor> {
@@ -44,7 +44,13 @@ export class MonitorService {
     // Trigger recovery notification if device was down
     if (monitor.status === MonitorStatus.DOWN) {
       this.logger.log(`RECOVERY: Device ${id} is back online!`);
-      await this.emailService.sendRecovery(monitor.alert_email, id);
+      this.logger.log(
+        JSON.stringify({
+          RECOVERY: `Device ${id} is back online!`,
+          time: new Date().toISOString(),
+        }),
+      );
+      // await this.emailService.sendRecovery(monitor.alert_email, id);
     }
 
     // Reset the alert window
@@ -106,7 +112,7 @@ export class MonitorService {
         }),
       );
 
-      await this.emailService.sendAlert(monitor.alert_email, monitor.id);
+      // await this.emailService.sendAlert(monitor.alert_email, monitor.id);
     }
   }
 }
