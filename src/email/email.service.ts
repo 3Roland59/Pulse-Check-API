@@ -12,7 +12,7 @@ export class EmailService {
       await this.mailerService.sendMail({
         to,
         subject: `ALERT: Device ${deviceId} is Down`,
-        template: './templates/alert',
+        template: './alert',
         context: {
           deviceId,
           time: new Date().toISOString(),
@@ -29,7 +29,7 @@ export class EmailService {
       await this.mailerService.sendMail({
         to,
         subject: `RECOVERY: Device ${deviceId} is Back Online`,
-        template: './templates/recovery',
+        template: './recovery',
         context: {
           deviceId,
           time: new Date().toISOString(),
