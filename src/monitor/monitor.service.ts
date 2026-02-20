@@ -58,6 +58,22 @@ export class MonitorService {
     return monitor.save();
   }
 
+  async updateTimeout(id: string, timeout: number): Promise<Monitor> {
+    const monitor = await this.monitorModel.findOne({ id }).exec();
+    if (!monitor) {
+      throw new NotFoundException(`Monitor with id ${id} not found`);
+    }
+
+    // Reset the alert window
+    const nextAlertAt = new Date();
+    nextAlertAt.setSeconds(nextAlertAt.getSeconds() + timeout);
+
+    monitor.timeout = timeout;
+    monitor.next_alert_at = nextAlertAt;
+
+    return monitor.save();
+  }
+
   async pause(id: string): Promise<Monitor> {
     const monitor = await this.monitorModel.findOne({ id }).exec();
     if (!monitor) {

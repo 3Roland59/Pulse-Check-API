@@ -1,0 +1,22 @@
+meta {
+  name: update_timeout
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{baseUrl}}/monitors/device-123/update-timeout
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "timeout": 30
+  }
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}
