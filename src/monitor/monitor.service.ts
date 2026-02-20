@@ -1,26 +1,92 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
+import { Cron, CronExpression } from '@nestjs/schedule';
+import { Monitor } from './schemas/monitor.schema';
 import { CreateMonitorDto } from './dto/create-monitor.dto';
-import { UpdateMonitorDto } from './dto/update-monitor.dto';
+import { MonitorStatus } from './enums/monitor.status.enum';
+import { EmailService } from '../email/email.service';
 
 @Injectable()
 export class MonitorService {
-  create(createMonitorDto: CreateMonitorDto) {
-    return 'This action adds a new monitor';
+  private readonly logger = new Logger(MonitorService.name);
+
+  constructor(
+    @InjectModel(Monitor.name) private monitorModel: Model<Monitor>,
+    private readonly emailService: EmailService,
+  ) { }
+
+  async create(createMonitorDto: CreateMonitorDto): Promise<Monitor> {
+    const nextAlertAt = new Date();
+    nextAlertAt.setSeconds(nextAlertAt.getSeconds() + createMonitorDto.timeout);
+
+    const createdMonitor = new this.monitorModel({
+      ...createMonitorDto,
+      status: MonitorStatus.ACTIVE,
+      last_heartbeat: new Date(),
+      next_alert_at: nextAlertAt,
+    });
+
+    this.logger.log(`New monitor registered: ${createMonitorDto.id}`);
+    return createdMonitor.save();
   }
 
-  findAll() {
-    return `This action returns all monitor`;
+  async heartbeat(id: string): Promise<Monitor> {
+    const monitor = await this.monitorModel.findOne({ id }).exec();
+    if (!monitor) {
+      throw new NotFoundException(`Monitor with id ${id} not found`);
+    }
+
+    // Trigger recovery notification if device was down
+    if (monitor.status === MonitorStatus.DOWN) {
+      this.logger.log(`RECOVERY: Device ${id} is back online!`);
+      await this.emailService.sendRecovery(monitor.alert_email, id);
+    }
+
+    // Reset the alert window
+    const nextAlertAt = new Date();
+    nextAlertAt.setSeconds(nextAlertAt.getSeconds() + monitor.timeout);
+
+    monitor.status = MonitorStatus.ACTIVE;
+    monitor.last_heartbeat = new Date();
+    monitor.next_alert_at = nextAlertAt;
+
+    return monitor.save();
   }
 
-  findOne(id: number) {
-    return `This action returns a #${id} monitor`;
+  async pause(id: string): Promise<Monitor> {
+    const monitor = await this.monitorModel.findOne({ id }).exec();
+    if (!monitor) {
+      throw new NotFoundException(`Monitor with id ${id} not found`);
+    }
+
+    monitor.status = MonitorStatus.PAUSED;
+    this.logger.log(`Monitoring paused for device: ${id}`);
+    return monitor.save();
   }
 
-  update(id: number, updateMonitorDto: UpdateMonitorDto) {
-    return `This action updates a #${id} monitor`;
-  }
+  @Cron(CronExpression.EVERY_SECOND)
+  async checkMonitors() {
+    const now = new Date();
+    const expiredMonitors = await this.monitorModel
+      .find({
+        status: MonitorStatus.ACTIVE,
+        next_alert_at: { $lte: now },
+      })
+      .exec();
 
-  remove(id: number) {
-    return `This action removes a #${id} monitor`;
+    for (const monitor of expiredMonitors) {
+      monitor.status = MonitorStatus.DOWN;
+      await monitor.save();
+
+      this.logger.log(
+        JSON.stringify({
+          ALERT: `Device ${monitor.id} is down!`,
+          time: new Date().toISOString(),
+        }),
+      );
+
+      await this.emailService.sendAlert(monitor.alert_email, monitor.id);
+    }
   }
 }
