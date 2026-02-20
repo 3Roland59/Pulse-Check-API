@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Cron, CronExpression } from '@nestjs/schedule';
@@ -17,6 +17,10 @@ export class MonitorService {
   ) { }
 
   async create(createMonitorDto: CreateMonitorDto): Promise<Monitor> {
+    const monitor = await this.monitorModel.findOne({ id: createMonitorDto.id }).exec();
+    if (monitor) {
+      throw new ConflictException(`Monitor with id ${createMonitorDto.id} already exists`);
+    }
     const nextAlertAt = new Date();
     nextAlertAt.setSeconds(nextAlertAt.getSeconds() + createMonitorDto.timeout);
 

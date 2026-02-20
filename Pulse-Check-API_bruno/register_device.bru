@@ -1,0 +1,20 @@
+meta {
+  name: register_device
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/monitors
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {"id": "device-123", "timeout": 60, "alert_email": "benzboyasensio@gmail.com"}
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

@@ -1,0 +1,16 @@
+meta {
+  name: heartbeat
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/monitors/device-123/heartbeat
+  body: none
+  auth: inherit
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

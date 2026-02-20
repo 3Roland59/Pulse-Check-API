@@ -1,0 +1,16 @@
+meta {
+  name: pause
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/monitors/device-123/pause
+  body: none
+  auth: inherit
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}
